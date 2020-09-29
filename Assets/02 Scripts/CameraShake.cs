@@ -12,7 +12,8 @@ public class CameraShake : MonoBehaviour
     float initialZ;
     float newZ;
 
-    float timer; //sine함수 x값
+
+    float timer; //sine함수의 x값은 시간이다.
     float amount; //sine함수 y값
     float freq, amp; //sine 주기, 진폭
 
@@ -63,15 +64,17 @@ public class CameraShake : MonoBehaviour
             shakeSpeed = 2.5f;
         }
 
+        //시간 흐름
         timer += Time.deltaTime;
 
         //Sine모양 Position 
         amount = (Mathf.Sin(freq * timer) * amp) * multiplier;
 
+        //X축과 Y축 로컬 포지션 이동
         newPos = new Vector3(amount, Mathf.Abs(amount) / 3, 0);
         transform.localPosition = Vector3.Lerp(transform.localPosition, initialPos + newPos, Time.deltaTime * shakeSpeed);
 
-        //Z축 Rotation 
+        //Z축 로컬 Rotation  
         newZ = Mathf.Lerp(newZ, initialZ + amount * 5, Time.deltaTime);
         transform.localEulerAngles = new Vector3(transform.localEulerAngles.x, transform.localEulerAngles.y, newZ);
     }

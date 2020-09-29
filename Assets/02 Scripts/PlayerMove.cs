@@ -3,103 +3,199 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-
-//목표1 : FPSPlayerVelocity 클래스의 GetVelocity를 사용하여 velocity를 계산한다.
-//필요속성1 : player속도, 중력상수
-
-//목표1.5 : Camera가 바라보는 방향이 Player의 Forward가 된다.
-
-//목표2 : velocity를 사용해 jump하고
-// 2.1 : velocity.y = jumpPower 로 점프한다
-// 2.2 : isGrounded 가 참일 때와 space키를 눌렀을 때
-// 2.3 : jump 하고 착지하기 전까지 방향 전환이 불가능하다.
-// 2.4 : jump 하고 착지하기 전까지 jump 하는 순간의 x,z 축 방향을 유지한다.
-// 필요속성2 : jumpPower, jump확인bool변수, jump하는 순간의 velocity를 저장할 Vector3
-
-//목표3 : velocity를 사용해 Move한다
-// 3.1 : Move.cc(velocity*Time);
-
+//목표1 : Camera가 바라보는 방향을 앞으로 움직인다
+//목표2 : -9.8의 중력 가속도를 받으며, 스페이스바를 눌러 점프할 수 있다.
+//목표3 : 점프 중 방향 수정이 불가하다.
 
 public class PlayerMove : MonoBehaviour
 {
-    public float playerSpeed;
-    public float gravityConstant;
-    public float jumpPower;
-
-    //jump 확인, jump 순간의 속도
-    bool hasJumped;
-    Vector3 hasJumpedVelocity;
-
     CharacterController cc;
-    FPSPlayerVelocity fpsVelocity;
+    float moveSpeed;
+    public float sitSpeed;
+    public float walkSpeed;
+    public float runSpeed;
+
+    public float jumpPower;
+    Vector3 dir;
+    float yVelocity;
+    float gravityConstant;
+
+    [HideInInspector]
+    public static bool isJumping;
+    [HideInInspector]
+    public static bool isSitting;
+    [HideInInspector]
+    public static bool isRunning;
+    [HideInInspector]
+    public static bool isWalking;
+    [HideInInspector]
+    public static bool isStill;
+
+
+    float ccHeight;
+    public float heightChangeSpeed;
+    
 
     void Start()
     {
-        hasJumpedVelocity = Vector3.zero;
+        Init();
+        if (Weapon.isReloading)
+        {
+            Weapon.isReloading = false;
+        }
+    }
+
+    void Init()
+    {
+        isSitting = false;
+        isJumping = false;
+        ccHeight = 1.42f;
+        gravityConstant = -9.8f;
         cc = GetComponent<CharacterController>();
-        fpsVelocity = new FPSPlayerVelocity();
     }
 
     void Update()
     {
+        //Player가 죽은 상태라면 아래 함수를 실행하지 않는다.
+        if (PlayerDie.isDead)
+        {
+            return;
+        }
+
+        //Player가 착지한 상태라면, 
+        if (cc.isGrounded)
+        {
+            //중력값은 0으로 설정한다.
+            yVelocity = 0f;
+        }
         
-        //목표1 : FPSPlayerVelocity 클래스를 사용해 velocity(Vector3)를 계산하고 방향을 Main Camera로 한다.
-        CalculateVelocity();
-        //목표2 : velocity를 사용해 jump하고
+
+        GetVector3InputXZ();
+        InputDirToCamDir();
+        StayStill();
+        Run();
         Jump();
-        //목표3 : velocity를 사용해 Move한다
+        Sit();
+        ApplyGravity();
+        Speed();
         Move();
     }
 
-    //실시간 v 계산
-    void CalculateVelocity()
+    void Speed()
     {
-        fpsVelocity.GetVelocityCamTrDirection(playerSpeed, gravityConstant);
+        if (isRunning)
+        {
+            moveSpeed = runSpeed;
+        }
+        else if (isSitting)
+        {
+            moveSpeed = sitSpeed;
+        }
+        else
+        {
+            moveSpeed = walkSpeed;
+        }
     }
 
-    //목표2 : velocity를 사용해 jump하고
+    //키보드로부터 X-Axis와 Z-Axis 방향값을 받는 함수
+    public void GetVector3InputXZ()
+    {
+        dir = Vector3.zero;
+        dir.x = Input.GetAxisRaw("Horizontal");
+        dir.z = Input.GetAxisRaw("Vertical");
+        dir.Normalize();
+    }
+
+    //키보드로부터 받은 월드 공간 방향을 Main Camera 기준 로컬 방향으로 치환 
+    void InputDirToCamDir()
+    {
+        dir = Camera.main.transform.TransformDirection(dir);
+    }
+
+    void StayStill()
+    {
+        if (Input.GetAxis("Horizontal") == 0 && Input.GetAxis("Vertical") == 0)
+        {
+            isStill = true;
+        }
+        else
+        {
+            isStill = false;
+        }
+    }
+
+    void Run()
+    {
+        //shift를 누르는 동안은 달리는 상태이다
+        //누르지 않으면 달리지 않는 상태이다
+
+        if (Input.GetKey(KeyCode.LeftShift) && !isSitting && !Weapon.isShooting && !Weapon.isZooming &&!isStill && !PlayerHit.playerHit && !Buttstroke.isButtstroking)
+        {
+            isRunning = true;
+            isWalking = false;
+        }
+        else
+        {
+            //뛰지 않고 걸을 때
+            if (Input.GetAxis("Horizontal") != 0 || Input.GetAxis("Vertical") !=0)
+            {
+                isWalking = true;
+            }
+            //가만히 있을 때
+            else
+            {
+                isWalking = false;
+            }
+            isRunning = false;
+        }
+    }
+
+    
     void Jump()
     {
-        //바닥에 있을때 
-        // -> 점프 중이 아닌 상태로 만든다
-        //이걸 밑에 두면 한 프레임을 주지 못해서 아직 땅에 있는 것으로 된다.
         if (cc.isGrounded)
         {
-            hasJumped = false;
+            isJumping = false;
         }
-
-        // 2.2 : 지면에 있을 때 스페이스키를 눌러 점프할 수 있다.
-        if (cc.isGrounded && Input.GetButtonDown("Jump"))
+        if (cc.isGrounded && Input.GetKeyDown(KeyCode.Space) && !isSitting)
         {
-            // 2.1 : velocity.y = jumpPower 로 점프한다
-            fpsVelocity.velocity.y = jumpPower;
-
-            //착지하기 전까지 hasJumped는 true이다.
-            hasJumped = true;
-
-            //jump 하는 순간의 x, z 축 방향을 저장
-            hasJumpedVelocity.x = fpsVelocity.velocity.x;
-            hasJumpedVelocity.z = fpsVelocity.velocity.z;
+            isJumping = true;
+            yVelocity = 0;
+            yVelocity += jumpPower;
         }
+    }
 
-        // 점프중일때 방향 전환이 불가능하게 한다.
-        // 2.3 : jump 하고 착지하기 전까지 방향 전환이 불가능하다.
-        if (hasJumped)
+    void Sit()
+    {
+        //c를 누르면 앉고 일어선다
+        if (Input.GetKeyDown(KeyCode.C))
         {
-            // 2.4 : jump 하고 착지하기 전까지 jump 하는 순간의 x,z 축 방향을 유지한다.
-            fpsVelocity.velocity.x = hasJumpedVelocity.x;
-            fpsVelocity.velocity.z = hasJumpedVelocity.z;
+            isSitting = !isSitting;
+
+            if (isSitting)
+            {
+                ccHeight = 0f;
+            }
+            else
+            {
+                ccHeight = 2f;
+            }
         }
 
+        cc.height = Mathf.Lerp(cc.height, ccHeight, Time.deltaTime * heightChangeSpeed);
+        cc.height = Mathf.Clamp(cc.height, 0.01f, 1.42f);
+    }
 
-
-        //목표 : 지면에 닿을 때만 점프할 수 있고, 점프한 순간부터 착지하기 전까지는 점프 순간의 velocity를 유지한다.
-
+    void ApplyGravity()
+    {
+        //공중에 있을 때는 중력을 적용받는다. V = V0 + at
+        yVelocity += gravityConstant * Time.deltaTime;
+        dir.y = yVelocity;
     }
 
     void Move()
     {
-        //cc.Move(displacement = dir * speed)
-        cc.Move(fpsVelocity.velocity * Time.deltaTime);
+        //vt = 속도x시간 = 방향 X 속력 X 시간 
+        cc.Move(dir * moveSpeed * Time.deltaTime);
     }
 }
